@@ -44,99 +44,155 @@ class TestMLaunch(unittest.TestCase):
         cmd = [cfg['startup_info'][x] for x in cfg['startup_info'].keys()]
         return cfg, cmd
 
-    def assert_cmd(self, should_include, should_exclude):
-        elem1 = lambda x: x[0]
+    def cmdlist_filter(self, cmdlist):
+        return sorted([[x for x in cmd.split() if x.startswith('mongo') or x.startswith('--')] for cmd in cmdlist])
+
+    def cmdlist_print(self):
         cfg, cmdlist = self.read_config()
+        print '\n'
+        cmdset = self.cmdlist_filter(cmdlist)
+        for cmd in cmdset:
+            print cmd
 
-        for cmd in cmdlist:
-            cmdset = set(cmd.split())
-            
-            result = []
-            for incl in should_include:
-                result.append((incl.issubset(cmdset), '{0} should be present in "{1}"'.format(incl, cmd)))
-            resultbool = [x[0] for x in result]
-            self.assertTrue(any(resultbool), '{0}'.format([x[1] for x in result if not x[0]]))
-
-            result = []
-            for excl in should_exclude:
-                result.append((not excl.issubset(cmdset), '{0} should not be present in "{1}"'.format(excl, cmd)))
-            resultbool = [x[0] for x in result]
-            self.assertTrue(any(resultbool), '{0}'.format([x[1] for x in result if not x[0]]))
+    def cmdlist_assert(self, cmdlisttest):
+        cfg, cmdlist = self.read_config()
+        cmdset = [set(x) for x in self.cmdlist_filter(cmdlist)]
+        # cmdlisttest = [set(x) for x in cmdlisttest]
+        self.assertEqual(len(cmdlist), len(cmdlisttest), 'number of command lines is {0}, should be {1}'.format(len(cmdlist), len(cmdlisttest)))
+        for cmd in zip(cmdset,cmdlisttest):
+            self.assertSetEqual(cmd[0], cmd[1])
 
 
-    # @unittest.skip('')
     def test_single(self):
+        ''' mlaunch init --single should start 1 node '''
         self.run_tool('init --single')
-        should_include = [
-            {'mongod', '--dbpath', '--port', '27017', '--logpath', '--fork'}
+        cmdlist = [
+            {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork'}
         ]
-        should_exclude = [
-            {'mongod', '--replSet'}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        self.cmdlist_assert(cmdlist)
 
-    # @unittest.skip('')
     def test_replicaset(self):
+        ''' mlaunch init --replicaset should start 3 nodes '''
         self.run_tool("init --replicaset")
-        should_include = [
-            {'mongod', '--replSet', '--port'}
-        ]
-        should_exclude = [
-            {'mongos'}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork'} ] * 3
+        )
+        self.cmdlist_assert(cmdlist)
+    
+    def test_replicaset(self):
+        ''' mlaunch init --replicaset --nodes 7 should start 7 nodes '''
+        self.run_tool("init --replicaset --nodes 7")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork'} ] * 7
+        )
+        self.cmdlist_assert(cmdlist)
+    
+    def test_replicaset(self):
+        ''' mlaunch init --replicaset --nodes 6 --arbiter should start 7 nodes '''
+        self.run_tool("init --replicaset --nodes 6 --arbiter")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork'} ] * 7
+        )
+        self.cmdlist_assert(cmdlist)
 
-    # @unittest.skip('')
     def test_sharded_single(self):
+        ''' mlaunch init --sharded 2 --single should start 1 config, 2 single shards 1 mongos '''
         self.run_tool("init --sharded 2 --single")
-        should_include = [
-            {'mongod', '--shardsvr'},
-            {'mongod', '--configsvr'},
-            {'mongos', '--port', '27017', '--configdb'}
-        ]
-        should_exclude = [
-            {'mongod', '--replSet', '--shardsvr'}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        cmdlist = (
+            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+          + [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 2
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ] )
+        self.cmdlist_assert(cmdlist)
 
-
-    def test_sharded_replicaset(self):
+    def test_sharded_replicaset_sccc_1(self):
+        ''' mlaunch init --sharded 2 --replicaset should start 1 config, 2 shards (3 nodes each), 1 mongos '''
         self.run_tool("init --sharded 2 --replicaset")
-        should_include = [
-            {'mongod', '--replSet', '--shardsvr'},
-            {'mongod', '--configsvr'},
-            {'mongos', '--port', '27017', '--configdb'}
-        ]
-        should_exclude = [
-            {None}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        cmdlist = (
+            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
 
+    def test_sharded_replicaset_sccc_2(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 2 should start 1 config, 2 shards (3 nodes each), 1 mongos '''
+        self.run_tool("init --sharded 2 --replicaset --config 2")
+        cmdlist = (
+            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
 
-    def test_sharded_replicaset_sccc(self):
+    def test_sharded_replicaset_sccc_3(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 3 should start 3 config, 2 shards (3 nodes each), 1 mongos '''
         self.run_tool("init --sharded 2 --replicaset --config 3")
-        should_include = [
-            {'mongod', '--replSet', '--shardsvr'},
-            {'mongod', '--configsvr'},
-            {'mongos', '--port', '27017', '--configdb'}
-        ]
-        should_exclude = [
-            {None}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        cmdlist = (
+            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
 
+    def test_sharded_replicaset_sccc_4(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 4 should start 3 config, 2 shards (3 nodes each), 1 mongos '''
+        self.run_tool("init --sharded 2 --replicaset --config 4")
+        cmdlist = (
+            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
 
-    def test_sharded_replicaset_csrs(self):
+    def test_sharded_replicaset_csrs_1(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 1 --csrs should start 1 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        self.run_tool("init --sharded 2 --replicaset --config 1 --csrs")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
+
+    def test_sharded_replicaset_csrs_2(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 2 --csrs should start 2 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        self.run_tool("init --sharded 2 --replicaset --config 2 --csrs")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 2
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
+
+    def test_sharded_replicaset_csrs_3(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 3 --csrs should start 3 replicaset config, 2 shards (3 nodes each), 1 mongos '''
         self.run_tool("init --sharded 2 --replicaset --config 3 --csrs")
-        should_include = [
-            {'mongod', '--replSet', '--shardsvr'},
-            {'mongod', '--replSet', '--configsvr'},
-            {'mongos', '--port', '27017', '--configdb'}
-        ]
-        should_exclude = [
-            {None}
-        ]
-        self.assert_cmd(should_include, should_exclude)
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
+
+    def test_sharded_replicaset_csrs_4(self):
+        ''' mlaunch init --sharded 2 --replicaset --config 4 --csrs should start 4 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        self.run_tool("init --sharded 2 --replicaset --config 4 --csrs")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 4
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
+    
+    def test_sharded_replicaset_csrs_mmapv1(self):
+        ''' mlaunch init --sharded 2 --replicaset --csrs --storageEngine mmapv1 should not change config server storage engine '''
+        self.run_tool("init --sharded 2 --replicaset --csrs --storageEngine mmapv1")
+        cmdlist = (
+            [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+          + [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--storageEngine', '--shardsvr'} ] * 6
+          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ]
+        )
+        self.cmdlist_assert(cmdlist)
 
 
     # self.run_tool("init --sharded 2 --single")
