@@ -474,7 +474,7 @@ class MLaunchTool(BaseCmdLineTool):
     # part of the string
     def getMongoDVersion(self):
         binary = "mongod"
-        if self.args and self.args['binarypath']:
+        if self.args and self.args.get('binarypath'):
             binary = os.path.join(self.args['binarypath'], binary)
         ret = subprocess.Popen(['%s --version' % binary], stderr=subprocess.STDOUT, stdout=subprocess.PIPE, shell=True)
         out, err = ret.communicate()

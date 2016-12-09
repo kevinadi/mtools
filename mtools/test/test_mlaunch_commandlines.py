@@ -4,15 +4,34 @@ import sys
 import unittest
 import inspect
 import shutil
+import subprocess
 
 from mtools.mlaunch.mlaunch import MLaunchTool, shutdown_host
 from nose.tools import *
 from nose.plugins.attrib import attr
 from nose.plugins.skip import Skip, SkipTest
 from pprint import pprint
+from distutils.version import LooseVersion
 
 
 # cmdline stored in self.startup_info
+
+# def getMongoDVersion(self):
+#         binary = "mongod"
+#         ret = subprocess.Popen(['%s --version' % binary], stderr=subprocess.STDOUT, stdout=subprocess.PIPE, shell=True)
+#         out, err = ret.communicate()
+#         buf = StringIO(out)
+#         current_version = buf.readline().rstrip('\n')
+#         # remove prefix "db version v"
+#         if current_version.rindex('v') > 0:
+#             current_version = current_version.rpartition('v')[2]
+
+#         # remove suffix making assumption that all release candidates equal revision 0
+#         try:
+#             if current_version.rindex('-') > 0: # release candidate?
+#                 current_version = current_version.rpartition('-')[0]
+#         except Exception:
+#             pass
 
 class TestMLaunch(unittest.TestCase):
 
@@ -20,6 +39,8 @@ class TestMLaunch(unittest.TestCase):
         # self.port = 33333
         self.base_dir = 'data_test_mlaunch'
         self.tool = MLaunchTool(test=True)
+        self.tool.args = {'verbose': False}
+        self.mongod_version = self.tool.getMongoDVersion()
 
     def tearDown(self):
         self.tool = None
@@ -45,10 +66,22 @@ class TestMLaunch(unittest.TestCase):
         return cfg, cmd
 
     def cmdlist_filter(self, cmdlist):
-        return sorted([[x for x in cmd.split() if x.startswith('mongo') or x.startswith('--')] for cmd in cmdlist])
+        res = []
+        for cmd in [x for x in cmdlist if x.startswith('mongod')]:
+            cmdset = set([x for x in cmd.split() if x.startswith('mongo') or x.startswith('--')])
+            if '--configsvr' in cmdset:
+                res.insert(0, cmdset)
+            else:
+                res.append(cmdset)
+        for cmd in [x for x in cmdlist if x.startswith('mongos')]:
+            cmdset = set([x for x in cmd.split() if x.startswith('mongo') or x.startswith('--')])
+            res.append(cmdset)
+        return res
 
     def cmdlist_print(self):
         cfg, cmdlist = self.read_config()
+        print '\n'
+        print cmdlist
         print '\n'
         cmdset = self.cmdlist_filter(cmdlist)
         for cmd in cmdset:
@@ -57,9 +90,8 @@ class TestMLaunch(unittest.TestCase):
     def cmdlist_assert(self, cmdlisttest):
         cfg, cmdlist = self.read_config()
         cmdset = [set(x) for x in self.cmdlist_filter(cmdlist)]
-        # cmdlisttest = [set(x) for x in cmdlisttest]
         self.assertEqual(len(cmdlist), len(cmdlisttest), 'number of command lines is {0}, should be {1}'.format(len(cmdlist), len(cmdlisttest)))
-        for cmd in zip(cmdset,cmdlisttest):
+        for cmd in zip(cmdset, cmdlisttest):
             self.assertSetEqual(cmd[0], cmd[1])
 
 
@@ -98,14 +130,22 @@ class TestMLaunch(unittest.TestCase):
     def test_sharded_single(self):
         ''' mlaunch init --sharded 2 --single should start 1 config, 2 single shards 1 mongos '''
         self.run_tool("init --sharded 2 --single")
-        cmdlist = (
-            [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
-          + [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 2
-          + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ] )
+        if LooseVersion(self.mongod_version) >= LooseVersion('3.3.0'):
+            cmdlist = (
+                [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--replSet', '--configsvr'} ]
+              + [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 2
+              + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ] )
+        else:
+            cmdlist = (
+                [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
+              + [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--shardsvr'} ] * 2
+              + [ {'mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'} ] )
         self.cmdlist_assert(cmdlist)
 
     def test_sharded_replicaset_sccc_1(self):
         ''' mlaunch init --sharded 2 --replicaset should start 1 config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) >= LooseVersion('3.3.0'):
+            self.skipTest('SCCC not supported by MongoDB >= 3.3.0')
         self.run_tool("init --sharded 2 --replicaset")
         cmdlist = (
             [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
@@ -116,6 +156,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_sccc_2(self):
         ''' mlaunch init --sharded 2 --replicaset --config 2 should start 1 config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) >= LooseVersion('3.3.0'):
+            self.skipTest('SCCC not supported by MongoDB >= 3.3.0')
         self.run_tool("init --sharded 2 --replicaset --config 2")
         cmdlist = (
             [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
@@ -126,6 +168,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_sccc_3(self):
         ''' mlaunch init --sharded 2 --replicaset --config 3 should start 3 config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) >= LooseVersion('3.3.0'):
+            self.skipTest('SCCC not supported by MongoDB >= 3.3.0')
         self.run_tool("init --sharded 2 --replicaset --config 3")
         cmdlist = (
             [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
@@ -136,6 +180,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_sccc_4(self):
         ''' mlaunch init --sharded 2 --replicaset --config 4 should start 3 config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) >= LooseVersion('3.3.0'):
+            self.skipTest('SCCC not supported by MongoDB >= 3.3.0')
         self.run_tool("init --sharded 2 --replicaset --config 4")
         cmdlist = (
             [ {'mongod', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
@@ -146,6 +192,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_csrs_1(self):
         ''' mlaunch init --sharded 2 --replicaset --config 1 --csrs should start 1 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) < LooseVersion('3.1.0'):
+            self.skipTest('CSRS not supported by MongoDB < 3.1.0')
         self.run_tool("init --sharded 2 --replicaset --config 1 --csrs")
         cmdlist = (
             [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
@@ -156,6 +204,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_csrs_2(self):
         ''' mlaunch init --sharded 2 --replicaset --config 2 --csrs should start 2 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) < LooseVersion('3.1.0'):
+            self.skipTest('CSRS not supported by MongoDB < 3.1.0')
         self.run_tool("init --sharded 2 --replicaset --config 2 --csrs")
         cmdlist = (
             [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 2
@@ -166,6 +216,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_csrs_3(self):
         ''' mlaunch init --sharded 2 --replicaset --config 3 --csrs should start 3 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) < LooseVersion('3.1.0'):
+            self.skipTest('CSRS not supported by MongoDB < 3.1.0')
         self.run_tool("init --sharded 2 --replicaset --config 3 --csrs")
         cmdlist = (
             [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 3
@@ -176,6 +228,8 @@ class TestMLaunch(unittest.TestCase):
 
     def test_sharded_replicaset_csrs_4(self):
         ''' mlaunch init --sharded 2 --replicaset --config 4 --csrs should start 4 replicaset config, 2 shards (3 nodes each), 1 mongos '''
+        if LooseVersion(self.mongod_version) < LooseVersion('3.1.0'):
+            self.skipTest('CSRS not supported by MongoDB < 3.1.0')
         self.run_tool("init --sharded 2 --replicaset --config 4 --csrs")
         cmdlist = (
             [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ] * 4
@@ -186,6 +240,8 @@ class TestMLaunch(unittest.TestCase):
     
     def test_sharded_replicaset_csrs_mmapv1(self):
         ''' mlaunch init --sharded 2 --replicaset --csrs --storageEngine mmapv1 should not change config server storage engine '''
+        if LooseVersion(self.mongod_version) < LooseVersion('3.1.0'):
+            self.skipTest('CSRS not supported by MongoDB < 3.1.0')
         self.run_tool("init --sharded 2 --replicaset --csrs --storageEngine mmapv1")
         cmdlist = (
             [ {'mongod', '--replSet', '--dbpath', '--logpath', '--port', '--logappend', '--fork', '--configsvr'} ]
@@ -194,12 +250,15 @@ class TestMLaunch(unittest.TestCase):
         )
         self.cmdlist_assert(cmdlist)
 
+    @unittest.skip('not implemented yet')
+    def test_sharded_oplogsize(self):
+        ''' mlaunch init --single --arbiter '''
+        self.run_tool("init --sharded 1 --single --oplogSize 19 --verbose")
+
 
     # self.run_tool("init --sharded 2 --single")
 
     # self.run_tool("init --sharded 2 --replicaset --config 3 --mongos 2 --verbose")
-
-    # self.run_tool("init --sharded tic tac toe --replicaset")
 
     # self.run_tool("init --single -v")
 
