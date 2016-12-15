@@ -104,6 +104,7 @@ class TestMLaunch(unittest.TestCase):
     cmd_mongos = set(['mongos', '--logpath', '--port', '--configdb', '--logappend', '--fork'])
     cmd_storageEngine = set(['--storageEngine'])
     cmd_oplogSize = set(['--oplogSize'])
+    cmd_nojournal = set(['--nojournal'])
 
     def test_single(self):
         ''' mlaunch should start 1 node '''
@@ -379,7 +380,7 @@ class TestMLaunch(unittest.TestCase):
         self.cmdlist_assert(cmdlist)
 
     def test_storageengine_3_4(self):
-        ''' mlaunch should not pass storageEngine option to config server (3.4) '''
+        ''' mlaunch should not pass storageEngine option to CSRS config server (3.4) '''
         self.check_3_4()
         self.run_tool('init --sharded 2 --single --storageEngine mmapv1')
         cmdlist = (
@@ -389,3 +390,13 @@ class TestMLaunch(unittest.TestCase):
         )
         self.cmdlist_assert(cmdlist)
 
+    def test_nojournal_3_4(self):
+        ''' mlaunch should not pass nojournal option to CSRS config server (3.4) '''
+        self.check_3_4()
+        self.run_tool('init --sharded 2 --single --storageEngine mmapv1 --nojournal')
+        cmdlist = (
+            [ self.cmd_mongod | self.cmd_configsvr | self.cmd_replset ]
+          + [ self.cmd_mongod | self.cmd_shardsvr | self.cmd_storageEngine | self.cmd_nojournal ] * 2
+          + [ self.cmd_mongos ]
+        )
+        self.cmdlist_assert(cmdlist)
