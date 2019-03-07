@@ -1,4 +1,4 @@
-numpy==1.14.5
+numpy>=1.14.5
 ordereddict==1.1
 python-dateutil==2.7
 matplotlib==1.4.3
